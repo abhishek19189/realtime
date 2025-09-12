@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Exercise Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .video-container {
+            position: relative;
+            max-width: 100%;
+            height: auto;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .feedback {
+            background: rgba(0, 255, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .warning {
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="flex h-screen max-w-7xl mx-auto gap-4">
+        <!-- Sidebar -->
+        <nav class="w-1/4 bg-gray-800 text-white p-4 rounded-lg flex flex-col">
+            <h2 class="text-2xl font-bold mb-6">Menu</h2>
+            <button id="btn-home" class="mb-4 p-2 rounded hover:bg-gray-700">Home</button>
+            <button id="btn-video" class="mb-4 p-2 rounded hover:bg-gray-700">Video</button>
+            <button id="btn-photos" class="mb-4 p-2 rounded hover:bg-gray-700">Photos</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="w-3/4 glass p-6 overflow-auto rounded-lg">
+            <!-- Home Section -->
+            <div id="home-section" class="section">
+                <h1 class="text-3xl font-bold text-center mb-6 text-white">AI-Powered Real-Time Exercise Tracker</h1>
+                <p class="text-center mb-4 text-white">Track your posture, receive instant feedback, and get customized exercise suggestions based on your needs.</p>
+
+                <!-- Auth Section -->
+                <div id="auth-section" class="mb-6">
+                    <div class="flex justify-center mb-4">
+                        <button id="show-login" class="bg-blue-500 text-white px-4 py-2 rounded mr-2 hover:bg-blue-600">Login</button>
+                        <button id="show-register" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Register</button>
+                    </div>
+                    <div id="login-form" class="hidden glass p-4 mb-4">
+                        <h2 class="text-white text-xl mb-2">Login</h2>
+                        <input id="login-username" type="text" placeholder="Username" class="w-full p-2 mb-2 rounded">
+                        <input id="login-password" type="password" placeholder="Password" class="w-full p-2 mb-2 rounded">
+                        <button id="login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Login</button>
+                        <p id="login-error" class="text-red-500 mt-2 hidden"></p>
+                    </div>
+                    <div id="register-form" class="hidden glass p-4 mb-4">
+                        <h2 class="text-white text-xl mb-2">Register</h2>
+                        <input id="register-username" type="text" placeholder="Username" class="w-full p-2 mb-2 rounded">
+                        <input id="register-password" type="password" placeholder="Password" class="w-full p-2 mb-2 rounded">
+                        <button id="register-btn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Register</button>
+                        <p id="register-error" class="text-red-500 mt-2 hidden"></p>
+                    </div>
+                    <div id="user-info" class="hidden text-white text-center">
+                        <p>Welcome, <span id="username-display"></span>! <button id="logout-btn" class="bg-red-500 text-white px-2 py-1 rounded ml-2">Logout</button></p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col lg:flex-row justify-between mb-6">
+                    <div class="w-full lg:w-1/2 mb-4 lg:mb-0">
+                        <label for="exercise-select" class="block text-white mb-2">Select Exercise:</label>
+                        <select id="exercise-select" class="w-full p-2 rounded border-2 border-gray-300">
+                            <option value="squat">Squats</option>
+                            <option value="pushup">Push-Ups</option>
+                            <option value="deadlift">Deadlifts</option>
+                            <option value="plank">Planks</option>
+                        </select>
+                    </div>
+                    <div class="w-full lg:w-1/2 lg:ml-4">
+                        <label for="goal-select" class="block text-white mb-2">Your Goal:</label>
+                        <select id="goal-select" class="w-full p-2 rounded border-2 border-gray-300">
+                            <option value="build-muscle">Build Muscle</option>
+                            <!-- <option value="lose-weight">Lose Weight</option>
+                            <option value="improve-flexibility">Improve Flexibility</option>
+                            <option value="injury-prevention">Injury Prevention</option> -->
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col lg:flex-row gap-6 mb-6">
+                    <div class="video-container flex-1">
+                        <video id="video" class="w-full rounded-lg"></video>
+                        <canvas id="output"></canvas>
+                    </div>
+                    <div id="exercise-guide" class="flex-1 hidden">
+                        <img id="exercise-img" src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/2f6cc860-370f-4121-bc5a-6427d821e33f.png" alt="Person performing a squat exercise with correct posture: knees aligned over toes, back straight, hips lowered evenly, core engaged, demonstrating proper form for strength training in a gym setting with neutral lighting and simple background." class="w-full rounded-lg shadow-lg" />
+                        <p class="text-white text-center mt-2">Suggested Pose</p>
+                    </div>
+                </div>
+
+                <div class="text-center mb-4">
+                    <button id="start-btn" class="bg-blue-500 text-white px-6 py-3 rounded mr-4 hover:bg-blue-600 transition">Start Tracking</button>
+                    <button id="stop-btn" class="bg-red-500 text-white px-6 py-3 rounded hover:bg-red-600 transition">Stop</button>
+                </div>
+
+                <div id="feedback" class="hidden mb-6"></div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="glass p-4">
+                        <h2 class="text-xl font-semibold text-white mb-2">Posture Feedback</h2>
+                        <p id="posture-feedback" class="text-white">Feedback will appear here during exercise tracking.</p>
+                    </div>
+                    <div class="glass p-4">
+                        <h2 class="text-xl font-semibold text-white mb-2">Suggestions</h2>
+                        <p id="suggestions" class="text-white">Personalized suggestions based on your performance and goals.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Video Section -->
+            <div id="video-section" class="section hidden">
+                <h1 class="text-3xl font-bold text-center mb-6 text-white">Video Gallery</h1>
+                <p class="text-center mb-4 text-white">Watch exercise demonstration videos.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="glass p-4">
+                        <h3 class="text-white text-xl mb-2">Squat Tutorial</h3>
+                        <video controls class="w-full rounded">
+                            <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                    <div class="glass p-4">
+                        <h3 class="text-white text-xl mb-2">Push-Up Tutorial</h3>
+                        <video controls class="w-full rounded">
+                            <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Photos Section -->
+            <div id="photos-section" class="section hidden">
+                <h1 class="text-3xl font-bold text-center mb-6 text-white">Photo Gallery</h1>
+                <p class="text-center mb-4 text-white">Browse exercise photos and form examples.</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="glass p-4 flex flex-col items-center">
+                        <img src="https://via.placeholder.com/300x200?text=Squat+Form" alt="Squat Form" class="w-48 h-32 object-cover rounded mb-2">
+                        <p class="text-white text-center">Proper Squat Form</p>
+                    </div>
+                    <div class="glass p-4 flex flex-col items-center">
+                        <img src="https://via.placeholder.com/300x200?text=Push-Up+Form" alt="Push-Up Form" class="w-48 h-32 object-cover rounded mb-2">
+                        <p class="text-white text-center">Proper Push-Up Form</p>
+                    </div>
+                    <div class="glass p-4 flex flex-col items-center">
+                        <img src="https://via.placeholder.com/300x200?text=Plank+Form" alt="Plank Form" class="w-48 h-32 object-cover rounded mb-2">
+                        <p class="text-white text-center">Proper Plank Form</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let video = document.getElementById('video');
+        let canvasElement = document.getElementById('output');
+        let canvasCtx = canvasElement.getContext('2d');
+        let pose;
+        let camera;
+        let isTracking = false;
+        let exercise = 'squat';
+        let goal = 'build-muscle';
+
+        const exerciseImages = {
+            squat: {
+                src: "https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/2f6cc860-370f-4121-bc5a-6427d821e33f.png",
+                alt: "Person performing a squat exercise with correct posture: knees aligned over toes, back straight, hips lowered evenly, core engaged, demonstrating proper form for strength training in a gym setting with neutral lighting and simple background."
+            },
+            pushup: {
+                src: "pushup.jpeg",
+                alt: "Person performing push-up with correct form"
+            },
+            deadlift: {
+                src: "https://via.placeholder.com/600x400?text=Deadlift+Exercise",
+                alt: "Person performing deadlift with correct form"
+            },
+            plank: {
+                src: "https://via.placeholder.com/600x400?text=Plank+Exercise",
+                alt: "Person holding plank position"
+            }
+        };
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks) {
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 2});
+
+                // Analyze posture based on selected exercise
+                analyzePosture(results.poseLandmarks);
+            }
+            canvasCtx.restore();
+        }
+
+        function analyzePosture(landmarks) {
+            if (!isTracking) return;
+
+            let feedback = '';
+            let isCorrect = true;
+            let specificIssues = [];
+
+            if (exercise === 'squat') {
+                const leftKnee = landmarks[25]; // Left knee
+                const rightKnee = landmarks[26]; // Right knee
+                const leftHip = landmarks[23];
+                const rightHip = landmarks[24];
+                const leftAnkle = landmarks[27];
+                const rightAnkle = landmarks[28];
+
+                // Check knee alignment (should be over ankles)
+                if (leftKnee.x < leftAnkle.x - 0.05 || rightKnee.x < rightAnkle.x - 0.05) {
+                    feedback += 'Knees are leaning inward. Keep them aligned over your toes.<br>';
+                    specificIssues.push('knee-alignment');
+                    isCorrect = false;
+                }
+
+                // Check hip alignment
+                if (Math.abs(leftHip.y - rightHip.y) > 0.05) {
+                    feedback += 'Hips are uneven. Keep both sides level.<br>';
+                    specificIssues.push('hip-alignment');
+                    isCorrect = false;
+                }
+            } else if (exercise === 'pushup') {
+                const leftShoulder = landmarks[11];
+                const rightShoulder = landmarks[12];
+                const leftElbow = landmarks[13];
+                const rightElbow = landmarks[14];
+
+                if (Math.abs(leftElbow.y - leftShoulder.y) > 0.1 || Math.abs(rightElbow.y - rightShoulder.y) > 0.1) {
+                    feedback += 'Elbows are flaring out. Keep them close to your sides.<br>';
+                    specificIssues.push('elbow-position');
+                    isCorrect = false;
+                }
+            } else if (exercise === 'deadlift') {
+                const leftAnkle = landmarks[27];
+                const rightAnkle = landmarks[28];
+                const nose = landmarks[0];
+                const leftHip = landmarks[23];
+
+                if (nose.x < leftAnkle.x || nose.x > rightAnkle.x) {
+                    feedback += 'Back is rounding. Keep it straight.<br>';
+                    specificIssues.push('back-position');
+                    isCorrect = false;
+                }
+            } else if (exercise === 'plank') {
+                const leftElbow = landmarks[13];
+                const rightElbow = landmarks[14];
+                const leftShoulder = landmarks[11];
+                const rightShoulder = landmarks[12];
+
+                if (Math.abs(leftElbow.x - leftShoulder.x) > 0.05 || Math.abs(rightElbow.x - rightShoulder.x) > 0.05) {
+                    feedback += 'Elbows are not directly under shoulders.<br>';
+                    specificIssues.push('elbow-placement');
+                    isCorrect = false;
+                }
+            }
+
+            if (feedback === '') {
+                feedback = 'Great job! Posture looks good.';
+            }
+
+            document.getElementById('posture-feedback').innerHTML = feedback;
+            document.getElementById('feedback').className = isCorrect ? 'feedback' : 'warning';
+            document.getElementById('feedback').innerHTML = isCorrect ? 'Correct Form' : 'Incorrect Form';
+            document.getElementById('feedback').classList.remove('hidden');
+
+            // Update suggestions based on goal and current issues
+            let suggestions = generateRealTimeSuggestions(specificIssues, isCorrect, exercise, goal);
+            document.getElementById('suggestions').innerHTML = suggestions;
+        }
+
+        function generateRealTimeSuggestions(issues, isCorrect, exercise, goal) {
+            let suggestions = '';
+
+            if (isCorrect) {
+                // Positive reinforcement suggestions
+                switch (goal) {
+                    case 'build-muscle':
+                        suggestions = `✅ Excellent form! Try increasing weight by 5-10% or adding 1-2 reps next set.`;
+                        break;
+                    default:
+                        suggestions = `✅ Perfect! Maintain this form and focus on controlled movements.`;
+                }
+            } else {
+                // Specific suggestions based on issues
+                if (issues.includes('knee-alignment')) {
+                    suggestions += `• Keep knees tracking over toes - imagine pushing them outward.<br>`;
+                }
+                if (issues.includes('hip-alignment')) {
+                    suggestions += `• Level your hips - both sides should be even.<br>`;
+                }
+                if (issues.includes('elbow-position')) {
+                    suggestions += `• Tuck elbows closer to your body at 45-degree angle.<br>`;
+                }
+                if (issues.includes('back-position')) {
+                    suggestions += `• Maintain neutral spine - chest up, shoulders back.<br>`;
+                }
+                if (issues.includes('elbow-placement')) {
+                    suggestions += `• Position elbows directly under shoulders.<br>`;
+                }
+
+                // Add goal-specific advice
+                switch (goal) {
+                    case 'build-muscle':
+                        suggestions += `💪 Focus on quality reps over quantity for muscle growth.`;
+                        break;
+                    case 'lose-weight':
+                        suggestions += `🔥 Combine with cardio sessions for better fat loss results.`;
+                        break;
+                    case 'improve-flexibility':
+                        suggestions += `🧘 Add dynamic stretches between sets to improve range.`;
+                        break;
+                    case 'injury-prevention':
+                        suggestions += `🛡️ Listen to your body - reduce weight if form breaks.`;
+                        break;
+                }
+            }
+
+            return suggestions;
+        }
+
+        async function startTracking() {
+            exercise = document.getElementById('exercise-select').value;
+            goal = document.getElementById('goal-select').value;
+
+            const pose = new Pose({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+            });
+            pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            pose.onResults(onResults);
+
+            const camera = new Camera(video, {
+                onFrame: async () => {
+                    await pose.send({image: video});
+                },
+                width: 640,
+                height: 480
+            });
+            await camera.start();
+            video.style.display = 'block';
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+            isTracking = true;
+
+            // Show exercise guide
+            document.getElementById('exercise-guide').classList.remove('hidden');
+        }
+
+        function stopTracking() {
+            isTracking = false;
+            video.style.display = 'none';
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            document.getElementById('feedback').classList.add('hidden');
+            document.getElementById('posture-feedback').innerHTML = 'Feedback will appear here during exercise tracking.';
+            document.getElementById('suggestions').innerHTML = 'Personalized suggestions based on your performance and goals.';
+
+            // Hide exercise guide
+            document.getElementById('exercise-guide').classList.add('hidden');
+        }
+
+        document.getElementById('start-btn').addEventListener('click', startTracking);
+        document.getElementById('stop-btn').addEventListener('click', stopTracking);
+
+        document.getElementById('exercise-select').addEventListener('change', function() {
+            const selected = this.value;
+            const img = document.getElementById('exercise-img');
+            img.src = exerciseImages[selected].src;
+            img.alt = exerciseImages[selected].alt;
+        });
+
+        // Auth and API
+        let token = localStorage.getItem('token');
+        let username = localStorage.getItem('username');
+        let sessionStartTime = null;
+        let reps = 0;
+        let sets = 1;
+
+        if (token && username) {
+            showUserInfo(username);
+        }
+
+        function showLogin() {
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+        }
+
+        function showRegister() {
+            document.getElementById('register-form').classList.remove('hidden');
+            document.getElementById('login-form').classList.add('hidden');
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            try {
+                const response = await fetch('http://localhost:4000/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    token = data.token;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('username', username);
+                    showUserInfo(username);
+                    document.getElementById('login-error').classList.add('hidden');
+                } else {
+                    document.getElementById('login-error').textContent = data.message;
+                    document.getElementById('login-error').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            try {
+                const response = await fetch('http://localhost:4000/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Registration successful! Please login.');
+                    showLogin();
+                    document.getElementById('register-error').classList.add('hidden');
+                } else {
+                    document.getElementById('register-error').textContent = data.message;
+                    document.getElementById('register-error').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Register error:', error);
+            }
+        }
+
+        function logout() {
+            token = null;
+            username = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            document.getElementById('user-info').classList.add('hidden');
+            document.getElementById('auth-section').classList.remove('hidden');
+        }
+
+        function showUserInfo(user) {
+            document.getElementById('username-display').textContent = user;
+            document.getElementById('user-info').classList.remove('hidden');
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+        }
+
+        async function saveExerciseSession() {
+            if (!token) return;
+            const duration = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0;
+            const feedback = document.getElementById('posture-feedback').textContent;
+            try {
+                await fetch('http://localhost:4000/api/exercises', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        exercise_type: exercise,
+                        duration,
+                        reps,
+                        sets,
+                        feedback
+                    })
+                });
+                console.log('Exercise session saved');
+            } catch (error) {
+                console.error('Save error:', error);
+            }
+        }
+
+        // Modified startTracking
+        const originalStartTracking = startTracking;
+        startTracking = async function() {
+            sessionStartTime = Date.now();
+            await originalStartTracking();
+        };
+
+        // Modified stopTracking
+        const originalStopTracking = stopTracking;
+        stopTracking = function() {
+            originalStopTracking();
+            if (token) {
+                saveExerciseSession();
+            }
+            sessionStartTime = null;
+        };
+
+        // Event listeners
+        document.getElementById('show-login').addEventListener('click', showLogin);
+        document.getElementById('show-register').addEventListener('click', showRegister);
+        document.getElementById('login-btn').addEventListener('click', login);
+        document.getElementById('register-btn').addEventListener('click', register);
+        document.getElementById('logout-btn').addEventListener('click', logout);
+
+        // Navigation
+        function showSection(sectionId) {
+            const sections = document.querySelectorAll('.section');
+            sections.forEach(section => section.classList.add('hidden'));
+            document.getElementById(sectionId).classList.remove('hidden');
+        }
+
+        document.getElementById('btn-home').addEventListener('click', () => showSection('home-section'));
+        document.getElementById('btn-video').addEventListener('click', () => showSection('video-section'));
+        document.getElementById('btn-photos').addEventListener('click', () => showSection('photos-section'));
+    </script>
+</body>
+</html>
+</content>
+</create_file>
